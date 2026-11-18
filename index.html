@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>陈晓琳 · 圣诞快乐</title>
+<style>
+  html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#070818;
+    font-family:"PingFang SC","Microsoft YaHei",sans-serif; }
+  #scene { position:fixed; inset:0; display:block; }
+  #musicBtn { position:fixed; top:14px; right:14px; z-index:10; border:1px solid rgba(255,255,255,.35);
+    background:rgba(20,18,44,.55); color:#fff; border-radius:999px; padding:8px 16px;
+    font-size:14px; cursor:pointer; backdrop-filter: blur(4px); }
+  #hint { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); z-index:10;
+    color:rgba(255,255,255,.55); font-size:12px; letter-spacing:2px; pointer-events:none;
+    transition:opacity 1s; }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<button id="musicBtn">♪ 音乐：关</button>
+<div id="hint">轻点屏幕，音乐响起</div>
+<script>
+(() => {
+  const cv = document.getElementById('scene'), ctx = cv.getContext('2d');
+  let W = 0, H = 0, DPR = Math.min(window.devicePixelRatio || 1, 2);
+  function resize() {
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    buildTree();
+  }
+
+  // ---------- 背景代码（左侧淡淡滚动） ----------
+  const CODE = [
+    'const TAU = Math.PI * 2;',
+    'const name = "陈晓琳";',
+    'const wish = "圣诞快乐";',
+    '',
+    'function star(x, y, r) {',
+    '  // 树顶那颗星，只为她亮',
+    '  glow(x, y, r, "#cfe8ff");',
+    '}',
+    '',
+    'function layers(u, t) {',
+    '  const theta = TAU * 7.45 * u;',
+    '  const warp = 1 - .057 * Math.cos(theta);',
+    '  const rad = (.015 + .985 * u ** 1.12) * R;',
+    '  const z = Math.sin(theta),',
+    '        cs = Math.cos(theta);',
+    '  return [cx + cs * rad * warp,',
+    '          top + u * treeH, z];',
+    '}',
+    '',
+    'function tree(t) {',
+    '  if (t < .01) return;',
+    '  // 一圈一圈，把冬天缠成礼物',
+    '  for (let s = 0; s < 5; s++)',
+    '    strand(s, t);',
+    '  fillCrown(t);',
+    '}',
+    '',
+    'function fireworks(t) {',
+    '  if (t < 5) return;',
+    '  for (const f of shells)',
+    '    burst(f, "#ffd7f2");',
+    '}',
+    '',
+    'function nameThreads(t) {',
+    '  // 把她的名字，一笔一画点亮',
+    '  for (const ch of name)',
+    '    lightUp(ch);',
+    '}',
+    '',
+    'tree.grow();',
+    'fireworks.start();',
+    'snow.fall();',
+    'say(name, wish);',
+    '// 陈晓琳，圣诞快乐 🎄',
+  ];
+  let codeScroll = 0;
+
+  // ---------- 圣诞树粒子 ----------
+  const COLORS = ['#ff9ff3', '#f368e0', '#c56cf0', '#7ed6ff', '#a3e8ff', '#ffd7f2', '#ecccff', '#8be9fd'];
+  let pts = [];
+  function buildTree() {
+    pts = [];
+    const treeH = Math.min(H * 0.62, 560);
+    const R = Math.min(W, H) * 0.30;
+    const cx = W / 2, top = H * 0.16;
+    const N = 900;
+    for (let i = 0; i < N; i++) {
+      const u = Math.pow(Math.random(), 0.8);            // 0 顶 → 1 底
+      const theta = u * Math.PI * 2 * 7.45 + Math.random() * 0.6;
+      const rad = (0.02 + 0.98 * Math.pow(u, 1.12)) * R * (0.82 + Math.random() * 0.30);
+      pts.push({
+        u, theta, rad,
+        x: cx + Math.cos(theta) * rad,
+        y: top + u * treeH + (Math.random() - 0.5) * 8,
+        z: Math.sin(theta),
+        r: 0.8 + Math.random() * 1.9,
+        c: COLORS[(Math.random() * COLORS.length) | 0],
+        tw: Math.random() * Math.PI * 2,
+        delay: u * 0.85 + Math.random() * 0.25
+      });
+    }
+    pts.sort((a, b) => a.z - b.z);
+    treeGeom = { cx, top, treeH, R };
+  }
+  let treeGeom = { cx: 0, top: 0, treeH: 0, R: 0 };
+
+  // ---------- 雪 ----------
+  const snow = Array.from({ length: 90 }, () => ({
+    x: Math.random(), y: Math.random(), r: 0.8 + Math.random() * 1.8,
+    v: 0.014 + Math.random() * 0.03, ph: Math.random() * 6.28
+  }));
+
+  // ---------- 烟花 ----------
+  let shells = [];
+  function launchFirework() {
+    const x = W * (0.12 + Math.random() * 0.76), y = H * (0.10 + Math.random() * 0.22);
+    const c = COLORS[(Math.random() * COLORS.length) | 0];
+    const parts = [];
+    const n = 70 + (Math.random() * 40 | 0);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.15;
+      const sp = 1.2 + Math.random() * 2.6;
+      parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1 });
+    }
+    shells.push({ parts, c });
+  }
+
+  // ---------- 音乐（八音盒 Jingle Bells，WebAudio 合成） ----------
+  let audioCtx = null, musicOn = false, musicTimer = null;
+  const FREQ = { C: 261.63, D: 293.66, E: 329.63, F: 349.23, G: 392.00, A: 440.00, B: 493.88 };
+  const MELODY = [['E',1],['E',1],['E',2],['E',1],['E',1],['E',2],['E',1],['G',1],['C',1.5],['D',.5],['E',4],
+                  ['F',1],['F',1],['F',1],['F',1],['F',1],['E',1],['E',1],['E',1],['E',1],['D',1],['D',1],['E',1],['D',2],['G',2]];
+  function pling(freq, when, vol) {
+    const o = audioCtx.createOscillator(), o2 = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'sine'; o.frequency.value = freq;
+    o2.type = 'sine'; o2.frequency.value = freq * 3;
+    const g2 = audioCtx.createGain(); g2.gain.value = 0.25;
+    g.gain.setValueAtTime(0, when);
+    g.gain.linearRampToValueAtTime(vol, when + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + 1.4);
+    o.connect(g); o2.connect(g2); g2.connect(g); g.connect(audioCtx.destination);
+    o.start(when); o2.start(when); o.stop(when + 1.5); o2.stop(when + 1.5);
+  }
+  function playLoop() {
+    if (!musicOn) return;
+    let t = audioCtx.currentTime + 0.06;
+    let total = 0;
+    for (const [n, b] of MELODY) {
+      pling(FREQ[n], t, 0.16); pling(FREQ[n] / 2, t, 0.05);
+      t += b * 0.40; total += b * 0.40;
+    }
+    musicTimer = setTimeout(playLoop, total * 1000 + 350);
+  }
+  const btn = document.getElementById('musicBtn');
+  function setMusic(on) {
+    musicOn = on;
+    btn.textContent = on ? '♪ 音乐：开' : '♪ 音乐：关';
+    if (on) {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      audioCtx.resume(); playLoop();
+      document.getElementById('hint').style.opacity = '0';
+    } else {
+      clearTimeout(musicTimer);
+    }
+  }
+  btn.addEventListener('click', e => { e.stopPropagation(); setMusic(!musicOn); });
+  window.addEventListener('pointerdown', () => { if (!musicOn) setMusic(true); }, { once: true });
+
+  // ---------- 主循环 ----------
+  const start = performance.now();
+  let lastFw = 0;
+  function frame(now) {
+    const t = (now - start) / 1000;
+    // 背景
+    const bg = ctx.createRadialGradient(W / 2, H * 0.42, 60, W / 2, H * 0.5, Math.max(W, H) * 0.75);
+    bg.addColorStop(0, '#171233'); bg.addColorStop(0.55, '#0b0922'); bg.addColorStop(1, '#05050f');
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+    // 代码层
+    ctx.save();
+    ctx.font = '11px Menlo, Consolas, monospace';
+    ctx.fillStyle = 'rgba(150,170,220,0.16)';
+    const lh = 17, totalH = CODE.length * lh;
+    codeScroll = (t * 9) % totalH;
+    const codeW = W > 760 ? W * 0.34 : W * 0.52;
+    for (let i = 0; i < CODE.length; i++) {
+      let y = i * lh - codeScroll + 40;
+      if (y < -20) y += totalH;
+      if (y > H + 20) continue;
+      ctx.fillText(CODE[i], 14, y, codeW);
+    }
+    ctx.restore();
+
+    // 星空
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    for (let i = 0; i < 60; i++) {
+      const sx = (i * 173.3) % W, sy = (i * 269.7) % (H * 0.7);
+      const a = 0.25 + 0.35 * Math.abs(Math.sin(t * 0.7 + i));
+      ctx.globalAlpha = a;
+      ctx.fillRect(sx, sy, 1.6, 1.6);
+    }
+    ctx.globalAlpha = 1;
+
+    // 烟花
+    if (t > 2.2 && t - lastFw > 2.6) { launchFirework(); lastFw = t; }
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    shells = shells.filter(s => s.parts.some(p => p.life > 0.02));
+    for (const s of shells) {
+      ctx.fillStyle = s.c;
+      for (const p of s.parts) {
+        p.x += p.vx; p.y += p.vy; p.vy += 0.016; p.vx *= 0.985; p.vy *= 0.985; p.life *= 0.972;
+        ctx.globalAlpha = Math.max(p.life, 0);
+        ctx.beginPath(); ctx.arc(p.x, p.y, 1.7, 0, 6.283); ctx.fill();
+      }
+    }
+    ctx.restore(); ctx.globalAlpha = 1;
+
+    const { cx, top, treeH, R } = treeGeom;
+    // 树底光晕
+    const growAll = Math.min(t / 6.5, 1);
+    if (growAll > 0.5) {
+      const gg = ctx.createRadialGradient(cx, top + treeH + 16, 6, cx, top + treeH + 16, R * 1.25);
+      gg.addColorStop(0, 'rgba(140,120,255,0.30)'); gg.addColorStop(1, 'rgba(140,120,255,0)');
+      ctx.fillStyle = gg;
+      ctx.beginPath(); ctx.ellipse(cx, top + treeH + 16, R * 1.25, 26, 0, 0, 6.283); ctx.fill();
+    }
+
+    // 螺旋光带
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgba(200,190,255,0.35)'; ctx.lineWidth = 1.2;
+    for (let s = 0; s < 3; s++) {
+      ctx.beginPath();
+      let started = false;
+      for (let i = 0; i <= 120; i++) {
+        const u = i / 120;
+        if (u > growAll) break;
+        const th = u * Math.PI * 2 * 7.45 + s * 2.1 + t * 0.25;
+        const rad = (0.02 + 0.98 * Math.pow(u, 1.12)) * R;
+        const x = cx + Math.cos(th) * rad, y = top + u * treeH;
+        if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    // 树粒子
+    const rot = t * 0.25;
+    for (const p of pts) {
+      const local = (growAll - p.delay) / Math.max(1 - p.delay, 0.001);
+      if (local <= 0) continue;
+      const th = p.theta + rot;
+      const x = cx + Math.cos(th) * p.rad;
+      const y = p.y;
+      const tw = 0.55 + 0.45 * Math.sin(t * 2.4 + p.tw);
+      const sc = 0.72 + 0.28 * Math.cos(th);
+      ctx.globalAlpha = Math.min(local * 2, 1) * tw;
+      ctx.fillStyle = p.c;
+      ctx.shadowColor = p.c; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(x, y, p.r * sc + 0.4, 0, 6.283); ctx.fill();
+    }
+    ctx.restore(); ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+
+    // 树顶星
+    if (growAll > 0.06) {
+      const sx = cx, sy = top - 16;
+      const pulse = 1 + 0.16 * Math.sin(t * 2.6);
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const sg = ctx.createRadialGradient(sx, sy, 1, sx, sy, 34 * pulse);
+      sg.addColorStop(0, 'rgba(230,245,255,0.95)'); sg.addColorStop(0.35, 'rgba(160,210,255,0.45)');
+      sg.addColorStop(1, 'rgba(160,210,255,0)');
+      ctx.fillStyle = sg;
+      ctx.beginPath(); ctx.arc(sx, sy, 34 * pulse, 0, 6.283); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const ang = -Math.PI / 2 + i * Math.PI / 5;
+        const rr = (i % 2 === 0 ? 13 : 5.2) * pulse;
+        const px = sx + Math.cos(ang) * rr, py = sy + Math.sin(ang) * rr;
+        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+
+    // 名字与祝福（8 秒后淡入）
+    if (t > 7.6) {
+      const a = Math.min((t - 7.6) / 1.6, 1);
+      const wide = W > H;
+      const nx = wide ? W * 0.76 : W / 2;
+      const ny = wide ? H * 0.36 : H * 0.845;
+      ctx.save(); ctx.globalAlpha = a;
+      ctx.textAlign = 'center';
+      ctx.shadowColor = 'rgba(255,160,220,0.8)'; ctx.shadowBlur = 18;
+      ctx.fillStyle = '#ffe9f7';
+      ctx.font = 'italic 600 ' + (wide ? 54 : 40) + 'px Georgia, "Times New Roman", serif';
+      ctx.fillText('Xiaolin', nx, ny);
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '600 ' + (wide ? 25 : 21) + 'px "PingFang SC","Microsoft YaHei",sans-serif';
+      ctx.fillText('陈 晓 琳 · 圣 诞 快 乐', nx, ny + (wide ? 42 : 36));
+      ctx.shadowBlur = 0;
+      ctx.font = (wide ? 17 : 15) + 'px "PingFang SC","Microsoft YaHei",sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.fillText('愿这个冬天，所有的美好都绕着你转', nx, ny + (wide ? 76 : 66));
+      ctx.restore(); ctx.textAlign = 'left';
+      // 礼物盒
+      const gx = nx + (wide ? 88 : 96), gy = ny + (wide ? 66 : 52);
+      const s = wide ? 1 : 0.85;
+      ctx.save(); ctx.globalAlpha = a;
+      ctx.fillStyle = '#8f7ff5';
+      ctx.fillRect(gx - 24 * s, gy - 6 * s, 48 * s, 36 * s);
+      ctx.fillStyle = '#a794ff';
+      ctx.fillRect(gx - 28 * s, gy - 16 * s, 56 * s, 12 * s);
+      ctx.fillStyle = '#ff8fd0';
+      ctx.fillRect(gx - 4 * s, gy - 16 * s, 8 * s, 46 * s);
+      ctx.strokeStyle = '#ff8fd0'; ctx.lineWidth = 3.4 * s;
+      ctx.beginPath(); ctx.ellipse(gx - 9 * s, gy - 22 * s, 9 * s, 6 * s, -0.5, 0, 6.283); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(gx + 9 * s, gy - 22 * s, 9 * s, 6 * s, 0.5, 0, 6.283); ctx.stroke();
+      ctx.restore();
+    }
+
+    // 雪
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    for (const f of snow) {
+      const yy = ((f.y + t * f.v * 0.22) % 1.05) * H;
+      const xx = f.x * W + Math.sin(t * 0.8 + f.ph) * 14;
+      ctx.globalAlpha = 0.35 + 0.4 * Math.abs(Math.sin(f.ph + t));
+      ctx.beginPath(); ctx.arc(xx, yy, f.r, 0, 6.283); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    requestAnimationFrame(frame);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
